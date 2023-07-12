@@ -22,7 +22,7 @@ def build_generator(input_shape):
 def build_cnn(input_shape):
     inputs = Input(shape=input_shape)
     # Define the CNN architecture for reflection mask estimation
-    # Example architecture:
+    # VGG Net (Architectural Defination):
     conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
     conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv1)
     pooling = MaxPooling2D((2, 2))(conv2)
