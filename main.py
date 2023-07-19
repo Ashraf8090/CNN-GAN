@@ -1,3 +1,4 @@
+
 import os
 import numpy as np
 import tensorflow as tf
@@ -6,41 +7,49 @@ from tensorflow.keras.models import Model
 
 # GAN Generator
 def build_generator(input_shape):
-    inputs = Input(shape=input_shape)
-    # Define the generator architecture using Convolutional and Upsampling layers
-    # Example architecture:
-    conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
-    conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv1)
-    upsampling1 = UpSampling2D((2, 2))(conv2)
-    conv3 = Conv2D(64, (3, 3), activation='relu', padding='same')(upsampling1)
-    conv4 = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(conv3)
-    outputs = conv4
-    model = Model(inputs=inputs, outputs=outputs)
-    return model
+    # ... Generator architecture definition ...
 
 # CNN for Reflection Mask Estimation
 def build_cnn(input_shape):
-    inputs = Input(shape=input_shape)
-    # Define the CNN architecture for reflection mask estimation
-    # VGG Net (Architectural Defination):
-    conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
-    conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv1)
-    pooling = MaxPooling2D((2, 2))(conv2)
-    conv3 = Conv2D(64, (3, 3), activation='relu', padding='same')(pooling)
-    conv4 = Conv2D(1, (3, 3), activation='sigmoid', padding='same')(conv3)
-    outputs = conv4
-    model = Model(inputs=inputs, outputs=outputs)
-    return model
+    # ... CNN architecture definition ...
 
 # Define the GAN
 def build_gan(generator, cnn):
-    # Fix the weights of the CNN during GAN training
-    cnn.trainable = False
-    # Connect the generator and the CNN
-    inputs = generator.input
-    outputs = cnn(generator(inputs))
-    model = Model(inputs=inputs, outputs=outputs)
-    return model
+    # ... GAN definition ...
+
+# Loss functions
+adversarial_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+mse_loss = tf.keras.losses.MeanSquaredError()
+perceptual_loss = tf.keras.losses.MeanSquaredError()
+
+lambda_adversarial = 1.0
+lambda_mse = 100.0
+lambda_perceptual = 10.0
+lambda_tv = 1.0
+
+# GAN loss (adversarial loss)
+def gan_loss(y_true, y_pred):
+    return lambda_adversarial * adversarial_loss(y_true, y_pred)
+
+# Reflection mask loss (binary cross-entropy)
+def mask_loss(y_true, y_pred):
+    return lambda_mse * mse_loss(y_true, y_pred)
+
+# Image content loss (perceptual loss)
+def content_loss(y_true, y_pred):
+    # Pre-trained VGG or ResNet model
+    # Example: pre_trained_model = tf.keras.applications.VGG16(include_top=False, weights='imagenet')
+    # Example: feature_true = pre_trained_model(y_true)
+    # Example: feature_pred = pre_trained_model(y_pred)
+    return lambda_perceptual * perceptual_loss(feature_true, feature_pred)
+
+# Total Variation Loss
+def tv_loss(y_pred):
+    return lambda_tv * tf.image.total_variation(y_pred)
+
+# Final loss function for the GAN
+def generator_loss(y_true, y_pred):
+    return gan_loss(y_true, y_pred) + mask_loss(y_true, y_pred) + content_loss(y_true, y_pred) + tv_loss(y_pred)
 
 # Define the input shape (assuming grayscale images of size 128x128)
 input_shape = (128, 128, 1)
@@ -50,14 +59,12 @@ generator = build_generator(input_shape)
 cnn = build_cnn(input_shape)
 gan = build_gan(generator, cnn)
 
-# Compile the GAN
-gan.compile(loss='binary_crossentropy', optimizer='adam')
+# Compile the GAN with the custom loss function
+gan.compile(loss=generator_loss, optimizer='adam')
 
 # Prepare data paths
 training_dir = 'training'
 model_dir = 'model'
-input_dir = 'input'
-results_dir = 'results'
 
 # Load training data
 X_train = []
@@ -93,6 +100,7 @@ os.makedirs(model_dir, exist_ok=True)
 model_path = os.path.join(model_dir, 'reflection_removal_model.h5')
 gan.save(model_path)
 print(f"Model saved at {model_path}")
+
 
 # Load the model
 gan = tf.keras.models.load_model(model_path)
