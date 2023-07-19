@@ -51,6 +51,29 @@ def tv_loss(y_pred):
 def generator_loss(y_true, y_pred):
     return gan_loss(y_true, y_pred) + mask_loss(y_true, y_pred) + content_loss(y_true, y_pred) + tv_loss(y_pred)
 
+# Calculate PSNR
+def psnr(y_true, y_pred):
+    max_value = 1.0  # Assuming pixel values are in the range [0, 1]
+    return tf.image.psnr(y_true, y_pred, max_val=max_value)
+
+# Calculate SSIM
+def ssim(y_true, y_pred):
+    return tf.image.ssim(y_true, y_pred, max_val=1.0)
+
+# Function to annotate image with PSNR and SSIM values
+def annotate_image_with_metrics(image, psnr_value, ssim_value):
+    image = image.copy()
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()  # You can use a custom font if needed
+    draw.text((10, 10), f"PSNR: {psnr_value:.2f}", font=font, fill='white')
+    draw.text((10, 30), f"SSIM: {ssim_value:.4f}", font=font, fill='white')
+    return image
+
+# Function to remove reflections using the trained GAN
+def remove_reflections(images, generator):
+    reflection_free_images = generator.predict(images)
+    return reflection_free_images
+
 # Define the input shape (assuming grayscale images of size 128x128)
 input_shape = (128, 128, 1)
 
@@ -65,6 +88,8 @@ gan.compile(loss=generator_loss, optimizer='adam')
 # Prepare data paths
 training_dir = 'training'
 model_dir = 'model'
+output_dir = 'results_with_metrics'
+os.makedirs(output_dir, exist_ok=True)
 
 # Load training data
 X_train = []
@@ -93,30 +118,48 @@ for epoch in range(num_epochs):
     cnn.trainable = False
     gan.train_on_batch(X_train, M_train)
     
-    # Print training progress or save intermediate outputs
+    # Print training progress
+    print(f"Epoch {epoch + 1}/{num_epochs} - Training loss: {loss}")
 
-# Save the model
+    # Save intermediate outputs with annotations
+    for i, image in enumerate(fake_reflections):
+        # Generate reflection-free image using the trained GAN
+        reflection_free_image = generator.predict(np.expand_dims(X_train[i], axis=0))[0]
+
+        # Calculate PSNR and SSIM between original reflection-free image and generated reflection-free image
+        psnr_value = peak_signal_noise_ratio(X_train[i], reflection_free_image)
+        ssim_value = structural_similarity(X_train[i], reflection_free_image)
+
+        # Annotate the reflection-free image with PSNR and SSIM values
+        annotated_image = annotate_image_with_metrics(Image.fromarray((reflection_free_image * 255).astype(np.uint8)), psnr_value, ssim_value)
+
+        # Save the annotated image
+        output_path = os.path.join(output_dir, f"epoch_{epoch+1}_sample_{i+1}_psnr_{psnr_value:.2f}_ssim_{ssim_value:.4f}.png")
+        annotated_image.save(output_path)
+
+# Save the final model
 os.makedirs(model_dir, exist_ok=True)
 model_path = os.path.join(model_dir, 'reflection_removal_model.h5')
 gan.save(model_path)
-print(f"Model saved at {model_path}")
 
-
-# Load the model
-gan = tf.keras.models.load_model(model_path)
-
-# Inference on test images
-os.makedirs(results_dir, exist_ok=True)
-for filename in os.listdir(input_dir):
+# Perform reflection removal on input images (e.g., in /input directory)
+input_images_dir = 'input'
+os.makedirs(output_dir, exist_ok=True)
+for filename in os.listdir(input_images_dir):
     if filename.endswith('.png'):
-        image = tf.keras.preprocessing.image.load_img(os.path.join(input_dir, filename), target_size=input_shape[:2], color_mode='grayscale')
+        image = tf.keras.preprocessing.image.load_img(os.path.join(input_images_dir, filename), target_size=input_shape[:2], color_mode='grayscale')
         input_image = tf.keras.preprocessing.image.img_to_array(image) / 255.0
-        input_image = np.expand_dims(input_image, axis=0)
-        predicted_mask = gan.predict(input_image)
-        predicted_mask = np.squeeze(predicted_mask, axis=0)
-        predicted_mask *= 255.0
-        predicted_mask = predicted_mask.astype(np.uint8)
-        output_image = Image.fromarray(predicted_mask, mode='L')
-        output_path = os.path.join(results_dir, f"{filename}_result.png")
-        output_image.save(output_path)
-        print(f"Result saved at {output_path}")
+        reflection_free_image = remove_reflections(np.expand_dims(input_image, axis=0), generator)[0]
+        
+        # Calculate PSNR and SSIM between original input image and reflection-free image
+        psnr_value = peak_signal_noise_ratio(input_image, reflection_free_image)
+        ssim_value = structural_similarity(input_image, reflection_free_image)
+
+        # Annotate the reflection-free image with PSNR and SSIM values
+        annotated_image = annotate_image_with_metrics(Image.fromarray((reflection_free_image * 255).astype(np.uint8)), psnr_value, ssim_value)
+        
+        # Save reflection-free image with annotations
+        output_path = os.path.join(output_dir, f"reflection_free_{filename}")
+        annotated_image.save(output_path)
+
+print("Reflection removal completed and annotated output images saved.")
