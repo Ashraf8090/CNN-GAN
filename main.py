@@ -7,16 +7,76 @@ from tensorflow.keras.models import Model
 
 # GAN Generator
 def build_generator(input_shape):
-    # ... Generator architecture definition ...
+    inputs = Input(shape=input_shape)
+    
+    # Encoder
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    skip_conn = x
+    
+    # Downsampling
+    x = MaxPooling2D((2, 2))(x)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    skip_conn2 = x
+    
+    # Downsampling
+    x = MaxPooling2D((2, 2))(x)
+    x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    
+    # Upsampling
+    x = UpSampling2D((2, 2))(x)
+    x = concatenate([x, skip_conn2], axis=-1)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    
+    # Upsampling
+    x = UpSampling2D((2, 2))(x)
+    x = concatenate([x, skip_conn], axis=-1)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    
+    # Output
+    output = Conv2D(1, (1, 1), activation='sigmoid', padding='same')(x)
+    
+    generator = Model(inputs, output, name='Generator')
+    return generator
 
 # CNN for Reflection Mask Estimation
 def build_cnn(input_shape):
-    # ... CNN architecture definition ...
+    inputs = Input(shape=input_shape)
+    
+    # CNN architecture
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling2D((2, 2))(x)
+    
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling2D((2, 2))(x)
+    
+    x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    
+    x = Flatten()(x)
+    x = Dense(1024, activation='relu')(x)
+    x = Dense(1, activation='sigmoid')(x)
+    
+    cnn = Model(inputs, x, name='CNN')
+    return cnn
 
 # Define the GAN
 def build_gan(generator, cnn):
-    # ... GAN definition ...
-
+    input_shape = generator.input_shape[1:]  # Assuming the same input shape for both generator and cnn
+    inputs = Input(shape=input_shape)
+    
+    # GAN architecture
+    reflection_mask = cnn(inputs)
+    reflection_free_image = generator([inputs, reflection_mask])
+    
+    gan = Model(inputs, reflection_free_image, name='GAN')
+    return gan
 # Loss functions
 adversarial_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 mse_loss = tf.keras.losses.MeanSquaredError()
