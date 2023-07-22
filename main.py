@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 import tensorflow as tf
@@ -8,61 +7,61 @@ from tensorflow.keras.models import Model
 # GAN Generator
 def build_generator(input_shape):
     inputs = Input(shape=input_shape)
-    
+
     # Encoder
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
     skip_conn = x
-    
+
     # Downsampling
     x = MaxPooling2D((2, 2))(x)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     skip_conn2 = x
-    
+
     # Downsampling
     x = MaxPooling2D((2, 2))(x)
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
-    
+
     # Upsampling
     x = UpSampling2D((2, 2))(x)
     x = concatenate([x, skip_conn2], axis=-1)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
-    
+
     # Upsampling
     x = UpSampling2D((2, 2))(x)
     x = concatenate([x, skip_conn], axis=-1)
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
-    
+
     # Output
     output = Conv2D(1, (1, 1), activation='sigmoid', padding='same')(x)
-    
+
     generator = Model(inputs, output, name='Generator')
     return generator
 
 # CNN for Reflection Mask Estimation
 def build_cnn(input_shape):
     inputs = Input(shape=input_shape)
-    
+
     # CNN architecture
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
     x = MaxPooling2D((2, 2))(x)
-    
+
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
     x = MaxPooling2D((2, 2))(x)
-    
+
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
-    
+
     x = Flatten()(x)
     x = Dense(1024, activation='relu')(x)
     x = Dense(1, activation='sigmoid')(x)
-    
+
     cnn = Model(inputs, x, name='CNN')
     return cnn
 
@@ -70,11 +69,11 @@ def build_cnn(input_shape):
 def build_gan(generator, cnn):
     input_shape = generator.input_shape[1:]  # Assuming the same input shape for both generator and cnn
     inputs = Input(shape=input_shape)
-    
+
     # GAN architecture
     reflection_mask = cnn(inputs)
     reflection_free_image = generator([inputs, reflection_mask])
-    
+
     gan = Model(inputs, reflection_free_image, name='GAN')
     return gan
 # Loss functions
@@ -155,29 +154,37 @@ os.makedirs(output_dir, exist_ok=True)
 X_train = []
 M_train = []
 for filename in os.listdir(training_dir):
-    if filename.endswith('.png'):
+    if filename.endswith('l.png'):
         image = tf.keras.preprocessing.image.load_img(os.path.join(training_dir, filename), target_size=input_shape[:2], color_mode='grayscale')
         reflection_mask = tf.keras.preprocessing.image.load_img(os.path.join(training_dir, filename.replace('.png', '_mask.png')), target_size=input_shape[:2], color_mode='grayscale')
         X_train.append(tf.keras.preprocessing.image.img_to_array(image))
         M_train.append(tf.keras.preprocessing.image.img_to_array(reflection_mask))
 X_train = np.array(X_train) / 255.0
 M_train = np.array(M_train) / 255.0
+gan.compile(loss=generator_loss, optimizer='adam')
+
+# Save the initial generator and GAN models before training
+generator.save('/content/drive/MyDrive/reflection_removal_generator_initial.h5')
+cnn.save('/content/drive/MyDrive/reflection_removal_cnn_initial.h5')
+gan.save('/content/drive/MyDrive/reflection_removal_gan_initial.h5')
 
 # Training loop
 num_epochs = 10  # Adjust the number of epochs as needed
+batch_size = 32
+
 for epoch in range(num_epochs):
     # Generate fake reflections using the generator
     fake_reflections = generator.predict(X_train)
-    
+
     # Train the discriminator (CNN) on real and fake reflection masks
     cnn.trainable = True
     cnn.train_on_batch(X_train, M_train)
     cnn.train_on_batch(fake_reflections, np.zeros_like(fake_reflections))
-    
+
     # Train the generator (GAN) to fool the discriminator
     cnn.trainable = False
     gan.train_on_batch(X_train, M_train)
-    
+
     # Print training progress
     print(f"Epoch {epoch + 1}/{num_epochs} - Training loss: {loss}")
 
@@ -210,14 +217,14 @@ for filename in os.listdir(input_images_dir):
         image = tf.keras.preprocessing.image.load_img(os.path.join(input_images_dir, filename), target_size=input_shape[:2], color_mode='grayscale')
         input_image = tf.keras.preprocessing.image.img_to_array(image) / 255.0
         reflection_free_image = remove_reflections(np.expand_dims(input_image, axis=0), generator)[0]
-        
+
         # Calculate PSNR and SSIM between original input image and reflection-free image
         psnr_value = peak_signal_noise_ratio(input_image, reflection_free_image)
         ssim_value = structural_similarity(input_image, reflection_free_image)
 
         # Annotate the reflection-free image with PSNR and SSIM values
         annotated_image = annotate_image_with_metrics(Image.fromarray((reflection_free_image * 255).astype(np.uint8)), psnr_value, ssim_value)
-        
+
         # Save reflection-free image with annotations
         output_path = os.path.join(output_dir, f"reflection_free_{filename}")
         annotated_image.save(output_path)
