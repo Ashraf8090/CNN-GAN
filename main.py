@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
-
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 # GAN Generator
 def build_generator(input_shape):
     inputs = Input(shape=input_shape)
