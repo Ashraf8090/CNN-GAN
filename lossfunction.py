@@ -130,7 +130,86 @@ def annotate_image_with_metrics(image, psnr_value, ssim_value):
     draw.text((10, 30), f"SSIM: {ssim_value:.4f}", font=font, fill='white')
     return image
 
-# ... Rest of the code ...
+# Function to remove reflections using the trained GAN
+def remove_reflections(images, generator):
+    reflection_free_images = generator.predict(images)
+    return reflection_free_images
+
+# Define the input shape (assuming grayscale images of size 128x128)
+input_shape = (128, 128, 1)
+
+# Build the generator, CNN, and GAN
+generator = build_generator(input_shape)
+cnn = build_cnn(input_shape)
+gan = build_gan(generator, cnn)
+
+# Compile the GAN with the custom loss function
+gan.compile(loss=generator_loss, optimizer='adam')
+
+# Prepare data paths
+training_dir = 'training'
+model_dir = 'model'
+output_dir = 'results_with_metrics'
+os.makedirs(output_dir, exist_ok=True)
+
+# Load training data
+X_train = []
+M_train = []
+for filename in os.listdir(training_dir):
+    if filename.endswith('l.png'):
+        image = tf.keras.preprocessing.image.load_img(os.path.join(training_dir, filename), target_size=input_shape[:2], color_mode='grayscale')
+        reflection_mask = tf.keras.preprocessing.image.load_img(os.path.join(training_dir, filename.replace('.png', '_mask.png')), target_size=input_shape[:2], color_mode='grayscale')
+        X_train.append(tf.keras.preprocessing.image.img_to_array(image))
+        M_train.append(tf.keras.preprocessing.image.img_to_array(reflection_mask))
+X_train = np.array(X_train) / 255.0
+M_train = np.array(M_train) / 255.0
+gan.compile(loss=generator_loss, optimizer='adam')
+
+# Save the initial generator and GAN models before training
+generator.save('/content/drive/MyDrive/reflection_removal_generator_initial.h5')
+cnn.save('/content/drive/MyDrive/reflection_removal_cnn_initial.h5')
+gan.save('/content/drive/MyDrive/reflection_removal_gan_initial.h5')
+
+# Training loop
+num_epochs = 10  # Adjust the number of epochs as needed
+batch_size = 32
+
+for epoch in range(num_epochs):
+    # Generate fake reflections using the generator
+    fake_reflections = generator.predict(X_train)
+
+    # Train the discriminator (CNN) on real and fake reflection masks
+    cnn.trainable = True
+    cnn.train_on_batch(X_train, M_train)
+    cnn.train_on_batch(fake_reflections, np.zeros_like(fake_reflections))
+
+    # Train the generator (GAN) to fool the discriminator
+    cnn.trainable = False
+    gan.train_on_batch(X_train, M_train)
+
+    # Print training progress
+    print(f"Epoch {epoch + 1}/{num_epochs} - Training loss: {loss}")
+
+    # Save intermediate outputs with annotations
+    for i, image in enumerate(fake_reflections):
+        # Generate reflection-free image using the trained GAN
+        reflection_free_image = generator.predict(np.expand_dims(X_train[i], axis=0))[0]
+
+        # Calculate PSNR and SSIM between original reflection-free image and generated reflection-free image
+        psnr_value = peak_signal_noise_ratio(X_train[i], reflection_free_image)
+        ssim_value = structural_similarity(X_train[i], reflection_free_image)
+
+        # Annotate the reflection-free image with PSNR and SSIM values
+        annotated_image = annotate_image_with_metrics(Image.fromarray((reflection_free_image * 255).astype(np.uint8)), psnr_value, ssim_value)
+
+        # Save the annotated image
+        output_path = os.path.join(output_dir, f"epoch_{epoch+1}_sample_{i+1}_psnr_{psnr_value:.2f}_ssim_{ssim_value:.4f}.png")
+        annotated_image.save(output_path)
+
+# Save the final model
+os.makedirs(model_dir, exist_ok=True)
+model_path = os.path.join(model_dir, 'reflection_removal_model.h5')
+gan.save(model_path)
 
 # Perform reflection removal on input images (e.g., in /input directory)
 input_images_dir = 'input'
