@@ -3,7 +3,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+from PIL import Image, ImageDraw, ImageFont
+
 # GAN Generator
 def build_generator(input_shape):
     inputs = Input(shape=input_shape)
@@ -109,6 +110,7 @@ def tv_loss(y_pred):
 # Final loss function for the GAN
 def generator_loss(y_true, y_pred):
     return gan_loss(y_true, y_pred) + mask_loss(y_true, y_pred) + content_loss(y_true, y_pred) + tv_loss(y_pred)
+
 
 # Calculate PSNR
 def psnr(y_true, y_pred):
@@ -219,8 +221,8 @@ for filename in os.listdir(input_images_dir):
         reflection_free_image = remove_reflections(np.expand_dims(input_image, axis=0), generator)[0]
 
         # Calculate PSNR and SSIM between original input image and reflection-free image
-        psnr_value = peak_signal_noise_ratio(input_image, reflection_free_image)
-        ssim_value = structural_similarity(input_image, reflection_free_image)
+        psnr_value = psnr(np.expand_dims(input_image, axis=0), reflection_free_image)
+        ssim_value = ssim(np.expand_dims(input_image, axis=0), reflection_free_image)
 
         # Annotate the reflection-free image with PSNR and SSIM values
         annotated_image = annotate_image_with_metrics(Image.fromarray((reflection_free_image * 255).astype(np.uint8)), psnr_value, ssim_value)
